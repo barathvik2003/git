@@ -3,10 +3,11 @@ pipeline {
     agent any
 
     environment {
+        REGISTRY = '127.0.0.1:5001'
         APP_NAME = 'company-management'
-        REGISTRY = 'localhost:5000'
-        IMAGE = "${REGISTRY}/${APP_NAME}"
-        PORT = '5000'
+        CONTAINER_NAME = 'company-management'
+        APP_PORT = '5000'
+        HOST_PORT = '5000'
     }
 
     stages {
@@ -46,32 +47,38 @@ pipeline {
         }
 
         stage('Build Image') {
-    steps {
-        sh '''
-            sudo podman build \
-              -t localhost:5001/company-management:${BUILD_NUMBER} .
-        '''
-    }
-}
+            steps {
+                sh '''
+                    sudo podman build \
+                        -t ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER} .
+                '''
+            }
+        }
 
-stage('Push Image') {
-    steps {
-        sh '''
-            sudo podman push \
-              --tls-verify=false \
-              localhost:5001/company-management:${BUILD_NUMBER}
-        '''
-    }
-}
+        stage('Push Image') {
+            steps {
+                sh '''
+                    sudo podman push \
+                        --tls-verify=false \
+                        ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
+                '''
+            }
+        }
+
         stage('Deploy') {
             steps {
                 sh '''
-                    sudo podman rm -f ${APP_NAME} || true
+                    echo "Deploying ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}"
+
+                    sudo podman stop ${CONTAINER_NAME} 2>/dev/null || true
+                    sudo podman rm ${CONTAINER_NAME} 2>/dev/null || true
 
                     sudo podman run -d \
-                      --name ${APP_NAME} \
-                      -p ${PORT}:5000 \
-                      ${IMAGE}:${BUILD_NUMBER}
+                        --name ${CONTAINER_NAME} \
+                        -p ${HOST_PORT}:${APP_PORT} \
+                        ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
+
+                    echo "Deployment completed"
                 '''
             }
         }
@@ -79,10 +86,16 @@ stage('Push Image') {
         stage('Health Check') {
             steps {
                 sh '''
+                    echo "Waiting for application..."
                     sleep 5
 
-                    curl --fail \
-                    http://localhost:${PORT}/health
+                    echo "Checking application health..."
+
+                    curl --fail --silent \
+                        http://127.0.0.1:${HOST_PORT}/health
+
+                    echo ""
+                    echo "Health check PASSED"
                 '''
             }
         }
@@ -91,11 +104,26 @@ stage('Push Image') {
     post {
 
         success {
-            echo "Deployment successful"
+            echo '========================================'
+            echo 'CI/CD PIPELINE SUCCESSFUL'
+            echo "Application: ${APP_NAME}"
+            echo "Image: ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}"
+            echo '========================================'
         }
 
         failure {
-            echo "Pipeline failed"
+            echo '========================================'
+            echo 'CI/CD PIPELINE FAILED'
+            echo '========================================'
+
+            sh '''
+                echo "Checking container status..."
+                sudo podman ps -a --filter name=${CONTAINER_NAME}
+            '''
+        }
+
+        always {
+            echo "Pipeline completed: ${BUILD_NUMBER}"
         }
     }
 }
