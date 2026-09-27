@@ -46,23 +46,23 @@ pipeline {
         }
 
         stage('Build Image') {
-            steps {
-                sh '''
-                    sudo podman build \
-                    -t ${IMAGE}:${BUILD_NUMBER} .
-                '''
-            }
-        }
+    steps {
+        sh '''
+            sudo podman build \
+              -t localhost:5001/company-management:${BUILD_NUMBER} .
+        '''
+    }
+}
 
-        stage('Push Image') {
-            steps {
-                sh '''
-                    sudo podman push \
-                    ${IMAGE}:${BUILD_NUMBER}
-                '''
-            }
-        }
-
+stage('Push Image') {
+    steps {
+        sh '''
+            sudo podman push \
+              --tls-verify=false \
+              localhost:5001/company-management:${BUILD_NUMBER}
+        '''
+    }
+}
         stage('Deploy') {
             steps {
                 sh '''
