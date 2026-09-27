@@ -2,6 +2,14 @@ pipeline {
 
     agent any
 
+    parameters {
+        choice(
+            name: 'ACTION',
+            choices: ['DEPLOY', 'ROLLBACK'],
+            description: 'Deployment action'
+        )
+    }
+
     environment {
         REGISTRY = '127.0.0.1:5001'
         REGISTRY_NAME = 'local-registry'
@@ -14,6 +22,11 @@ pipeline {
     stages {
 
         stage('Build') {
+            when {
+                expression {
+                    params.ACTION == 'DEPLOY'
+                }
+            }
             steps {
                 sh '''
                     python3 -m venv venv
@@ -26,6 +39,11 @@ pipeline {
         }
 
         stage('Test') {
+            when {
+                expression {
+                    params.ACTION == 'DEPLOY'
+                }
+            }
             steps {
                 sh '''
                     ./venv/bin/pip install pytest
@@ -36,6 +54,11 @@ pipeline {
         }
 
         stage('Security Scan') {
+            when {
+                expression {
+                    params.ACTION == 'DEPLOY'
+                }
+            }
             steps {
                 sh '''
                     ./venv/bin/pip install pip-audit
@@ -114,6 +137,11 @@ pipeline {
         }
 
         stage('Build Image') {
+            when {
+                expression {
+                    params.ACTION == 'DEPLOY'
+                }
+            }
             steps {
                 sh '''
                     echo "Building container image..."
@@ -130,6 +158,11 @@ pipeline {
         }
 
         stage('Push Image') {
+            when {
+                expression {
+                    params.ACTION == 'DEPLOY'
+                }
+            }
             steps {
                 sh '''
                     echo "Pushing image to local registry..."
@@ -144,6 +177,11 @@ pipeline {
         }
 
         stage('Deploy') {
+            when {
+                expression {
+                    params.ACTION == 'DEPLOY'
+                }
+            }
             steps {
                 sh '''
                     echo "========================================"
@@ -180,6 +218,61 @@ pipeline {
             }
         }
 
+        stage('Rollback') {
+            when {
+                expression {
+                    params.ACTION == 'ROLLBACK'
+                }
+            }
+            steps {
+                sh '''
+                    echo "========================================"
+                    echo "ROLLBACK"
+                    echo "========================================"
+
+                    PREVIOUS_BUILD=$((BUILD_NUMBER - 1))
+
+                    if [ "$PREVIOUS_BUILD" -lt 1 ]; then
+                        echo "No previous build available for rollback."
+                        exit 1
+                    fi
+
+                    ROLLBACK_IMAGE="${REGISTRY}/${APP_NAME}:${PREVIOUS_BUILD}"
+
+                    echo "Rolling back to:"
+                    echo "$ROLLBACK_IMAGE"
+
+                    echo "Checking image in registry..."
+
+                    curl --fail --silent \
+                        http://127.0.0.1:5001/v2/${APP_NAME}/tags/list
+
+                    echo ""
+                    echo "Stopping current container..."
+
+                    sudo podman stop \
+                        ${CONTAINER_NAME} 2>/dev/null || true
+
+                    echo "Removing current container..."
+
+                    sudo podman rm \
+                        ${CONTAINER_NAME} 2>/dev/null || true
+
+                    echo "Starting previous version..."
+
+                    sudo podman run -d \
+                        --name ${CONTAINER_NAME} \
+                        -p ${HOST_PORT}:${APP_PORT} \
+                        ${ROLLBACK_IMAGE}
+
+                    echo "Rollback deployment completed."
+
+                    sudo podman ps \
+                        --filter name=${CONTAINER_NAME}
+                '''
+            }
+        }
+
         stage('Health Check') {
             steps {
                 sh '''
@@ -209,8 +302,8 @@ pipeline {
             echo 'CI/CD PIPELINE SUCCESSFUL'
             echo '========================================'
 
+            echo "Action: ${params.ACTION}"
             echo "Application: ${APP_NAME}"
-            echo "Image: ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}"
             echo "Container: ${CONTAINER_NAME}"
             echo "Application Port: ${HOST_PORT}"
         }
@@ -222,20 +315,24 @@ pipeline {
 
             sh '''
                 echo "Registry status:"
+
                 sudo podman ps -a \
                     --filter name=${REGISTRY_NAME}
 
                 echo "Application container status:"
+
                 sudo podman ps -a \
                     --filter name=${CONTAINER_NAME}
 
                 echo "All containers:"
+
                 sudo podman ps -a
             '''
         }
 
         always {
             echo "Pipeline completed: ${BUILD_NUMBER}"
+            echo "Selected action: ${params.ACTION}"
         }
     }
 }
