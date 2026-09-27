@@ -1,8 +1,14 @@
-#!/usr/bin/env python3
+from flask import Flask
 
-APP_NAME = "DevOps Demo"
-VERSION = "1.1"
+app = Flask(__name__)
 
-print(f"{APP_NAME} - Version {VERSION}")
-print("Application is running successfully")
-print("Monitoring: HEALTHY")
+@app.route("/")
+def home():
+    return "Company Management Application"
+
+@app.route("/health")
+def health():
+    return "OK"
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
