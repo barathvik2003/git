@@ -48,7 +48,7 @@ pipeline {
         stage('Build Image') {
             steps {
                 sh '''
-                    podman build \
+                    sudo podman build \
                     -t ${IMAGE}:${BUILD_NUMBER} .
                 '''
             }
@@ -57,7 +57,7 @@ pipeline {
         stage('Push Image') {
             steps {
                 sh '''
-                    podman push \
+                    sudo podman push \
                     ${IMAGE}:${BUILD_NUMBER}
                 '''
             }
@@ -66,9 +66,9 @@ pipeline {
         stage('Deploy') {
             steps {
                 sh '''
-                    podman rm -f ${APP_NAME} || true
+                    sudo podman rm -f ${APP_NAME} || true
 
-                    podman run -d \
+                    sudo podman run -d \
                       --name ${APP_NAME} \
                       -p ${PORT}:5000 \
                       ${IMAGE}:${BUILD_NUMBER}
